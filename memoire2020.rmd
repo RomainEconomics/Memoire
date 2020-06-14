@@ -1,0 +1,569 @@
+---
+title: "Business expectations among french farmers"
+author: "Drapala Simon , Jouhameau Romain"
+abstract: "This paper studies French farmers' business expectations. We focus on the statistical relationship between the agricultural land disappearance rate and a few independent variables such as the productivity of farms. To undertake this study, we used the data available on the Agreste website. The data is recorded on the French regions and the French departments and show a significant role played by Productivity. Our study's second aim is to link our results with the Teruti-Lucas' survey in order to provide a possible explanation for the conversion of agricultural landscapes. This leads us to consider the competition between urban areas and agricultural lands, and its consequences on land value."
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+library(readxl)
+library(tidyverse)
+library(sf)
+library(stargazer)
+library(knitr)
+
+##### J'importe les données des 22 régions, d'abord l'ensemble, puis les exploitations qui vont disparaitre
+Data_farms <- read_excel("Donnees par Regions avant 2013.xlsx", col_types = c("text", "numeric", "numeric","numeric", "numeric", "numeric","numeric", "numeric", "numeric"))
+
+Disappearing_farms <- read_excel("Exploitations qui vont disparaitre bis.xlsx",
+                                                 	col_types = c("text", "numeric", "numeric",
+                                                               	"numeric", "numeric", "numeric",
+                                                               	"numeric", "numeric", "numeric"))
+
+######## Je calcule les productivités, d'abord de l'ensemble puis des exploitations qui vont disparaître
+# First, the productivities of all French agricultural holdings are calculated 
+Data_farms <- mutate(Data_farms, Productivite = `Production brute standard en millier d'euros...5`/`Volume de travail  (UTA)...4`)
+Disappearing_farms<-mutate(Disappearing_farms, Productivite = `Production brute standard en millier d'euros...5`/`Volume de travail  (UTA)...4`)
+
+D <- mutate(Disappearing_farms,
+                                         	Productivite = `Production brute standard en millier d'euros...5` / `Volume de travail  (UTA)...4`)
+
+
+####### Je crée un nouveau tibble D pour enregistrer toutes les variables pertinentes
+# We use a new tibble D to enter every relevant variable 
+D <- select(Data_farms, Régions, Productivite)
+D <- mutate(D, Productivite_disp = Disappearing_farms$Productivite)  
+
+######## Computing two index of abandonment : Indice_d_abandon and Disp_surface
+D <- mutate(D, Indice_d_abandon = 100*(Disappearing_farms$`Nombre d'exploitations...2` / Data_farms$`Nombre d'exploitations...2`))
+
+D <- mutate(D, Disp_surface = 100*(Disappearing_farms$`Superficie agricole utilisée (SAU) en ha...3` / Data_farms$`Superficie agricole utilisée (SAU) en ha...3`))
+
+###### Computing the impact of each region in the abandonment phenomenon
+D <- mutate(D, Poids_Disp =  Disappearing_farms$`Nombre d'exploitations...2` / rep(7758, 23))
+
+### Analysis of the age of farmers (over 60) : ne fonctionne pas mais expliquer pk
+Data_farms <- mutate(Data_farms, Exploit_60plus = c(104181,1178,5079,3058,2970,5877,6141,3795,1988, 2447,1967,1646,4498,4670,6157,11641,11335,3334,8099,4680,6815,6162,645))
+
+D <- mutate(D, Indice_60plus = 100*( Data_farms$Exploit_60plus/ Data_farms$`Nombre d'exploitations...2`))
+
+### Analysis of Capital
+# We create a proxy of capital : tractors per farm
+Data_farms<-mutate(Data_farms,Trators = c(NA, 13712, 45040, 35950, 23962, 63939, 44954, 48424, 37979, 33456, 26199, 23212, 79362, 78712, 59813, 86831, 106332, 34263, 73222, 52967, 49951, 37733, 2743) )
+
+D <-mutate(D, tractors_per_farm = Data_farms$Trators/ Data_farms$`Nombre d'exploitations...2`)
+
+### We add a land price index from agreste
+p <- read_csv2("prix_terres_agricoles1.csv")
+D <- inner_join(D, p, by = "Régions")
+```
+
+# Introduction 
+
+The current crisis of Covid-19 shows to the entire world the importance of national food security in case the global trade system ever came to collapse. Several studies have been made on this subject to suggest possible explanations for the determinants of food security and what allow a country to be part of global trade as well as to be self-independent in terms of basic supplies. We could involve the role played by the Terruti-Lucas' survey in this subject. Our purpose is to deliver further explanations concerning the economic expectations of French farmers. In fact, farmers expectations may have major importance in the development of food security. The future farmers forcast might provoke the leave of them and jeopardize national food security. That's why the understanding of their anticipations is quite valuable.\
+\
+To provide such an explanation of French farmers expectations, we studied the Agreste's data bank : the *Enquête sur la structure des exploitations agricoles,  2013* , on French regions  and the *Enquête succession, 2010* on French departments. The first one includes a large set of data related to agricultural habits among French farmers classified by regions. 
+The survey was conducted among 52 800 farms during the year 2013. Volunteer farmers answered a questionnaire about their farms.\
+One of the most important contributions of this set is the line *"l'exploitation va disparaître et perdre son usage agricole"*. Starting from there, our academic purpose is to find the determinants of agricultural land disappearance. *The Enquête succession* allowed us to work at a smaller scale in order to provide stronger results. This survey was obtained in the same way than the *Enquêtre structure*, by using a questionnaire among volunteer farmers.
+This step is necessary if we hope for a better understanding of French farmers expectations.\
+To use this set of data, we constructed a proxy by using the non-succession rate of farms instead of using the agricultural land disappearance rate. Therefore, one of our first intuition was to assume a significant link between those two rate indexes.
+
+## Methodology
+
+We decided to use the R software due to its accessibility and because it provided us with the tools to enjoy a great experience in managing data. We have also paid particular attention to the quality and the reproducibility of results. That's why we give the opportunity to download the Rmd file and the data we used in the following link : 
+https://github.com/RomainEconomics/Memoire/tree/master/Memoire \
+\
+ Our first intuition was to outline the productivity of farms as a potential determinant of agricultural land disappearance. As we can see in Table, we seem to have a significative gap between the productivity of all farms and the productivity of farms declared as disappearing farms. All indicators are higher in the "all farms" column. If we look at some indicators such as the mean and the median, both are significantly higher in the "all farms" column.\
+ 
+```{r mean, echo=  FALSE, fig.align='center', fig.show='hold', fig.cap='Mean comparison'}
+
+sum_prod <- D %>% select(Productivite, Productivite_disp) %>% summary()
+
+knitr::kable(sum_prod, align = "rr",
+             col.names = c("All farms","Disappearing farms"),
+             caption = 'Comparison of farm productivity by regions')
+```
+
+In order to provide a better global understanding, we made two statistical maps. Again, we could observe promising perspectives. The country seems to be divided in two parts. The north appears to be more productive and less concerned with agricultural land disappearance. The south appears to be less productive and more affected by agricultural land disappearance.\
+
+
+```{r, fig.align='default', fig.cap='Productivity and land abandonment comparisons by regions', fig.show='hold', echo=FALSE, fig.width=5, out.width = "50%", fig.pos = "!b"}
+
+map <- st_read("france_nuts2_2010", "frareg2010", quiet = TRUE)
+dataregion <- select(D[-1,], Productivite, Indice_d_abandon, Poids_Disp, Disp_surface, "2013")
+
+
+dataregion <- mutate(dataregion,NUTS_NAME = map$NUTS_NAME)
+
+map_data <- inner_join(map, dataregion)
+
+## map1 <- 
+ggplot(map_data)+ geom_sf(aes(fill= Productivite)) + ggtitle("")+
+        labs( title = "Productivity",
+              caption = "Data : Agreste, Enquête Structure (2013)",
+              fill = "PBS\n /UTA") +
+          theme(axis.text.x = element_blank(),
+                axis.text.y = element_blank(),
+                axis.ticks =   element_blank(),
+                plot.title = element_text( size = 16),
+                legend.margin	= unit(0.1, "cm"),
+                legend.title = element_text(size = 13),
+                legend.text = element_text(size = 13),
+                plot.caption = element_text(size= 14)
+                ) 
+
+ggplot(map_data)+geom_sf(aes(fill= Disp_surface))+ggtitle("")+
+                          labs( title = "Land abandonment",
+                                caption = "Data : Agreste, Enquête Structure (2013)",
+                       fill =  "% of \n left \n lands")+
+          theme(axis.text.x = element_blank(),
+                axis.text.y = element_blank(),
+                axis.ticks =   element_blank(),
+                plot.title = element_text(size = 16),
+                legend.margin	= unit(0.1, "cm"),
+                legend.title = element_text(size = 13),
+                legend.text = element_text(size = 13),
+                plot.caption = element_text(size= 14))
+
+```
+\
+The OCDE's paper, *La performance environnementale de l'agriculture dans les pays de l'OCDE depuis 1990, section française* (2008), came to the same conclusion - the north and the West of the country appear to be more productive.\
+\
+At this stage, we can make an assumption : the greater the productivity is in a region, the lower the loss of lands appears.\
+Now, we must test this assumption and find others potential determinants of the agricultural land disappearance. Then we will extend our study to a smaller scale by using data in our possession.
+ 
+# Data {#data}
+
+## About the variables
+
+First of all, we had to construct several statistical indices to use our data. Our very first move was to create an index for agricultural land disappearance, which is our dependent variable. We had two alternatives. We chose to compute the share of agricultural land surface which is going to disappear in the regions' case. This index allowed us to take into account the farm size into the computation (disappearing area index). As a consequence of the lack of data on surfaces available on Departments, we chose to compute the share of farms which is going to disappear in the departments' case (land abandonment index). As a result, we made two indexes (which are factually very close) to undertake a study of our data. We used one in the regions case and the other one in the departments case due to the lack of available data.\
+\
+We also had to construct several independent variables. We structured our study around the impact of productivity on our dependent variables. We made this index by using the *Production Brut Standard* of the agricultural sector divided by the *Unité de Travail Annuel*. As a consequence, we obtained an index which provides us with an idea about the farm productivity. This index can be applicated both to regions and to departments.
+
+## Regions
+
+We started by making a few regressions on our two variables of interest. One of them is the productivity explained in the previous part. We also wanted to observe the effect of the farm capital on the dependent variable. We constructed this index by using data available in the *Enquête structure, 2013*. Of course, the agricultural capital is very heterogeneous and hard to estimate. That's why we constructed a proxy by using a piece of productive equipment used in most of farms : tractors. Hence, we estimate capital per farm by using tractors per farm.\
+Of course, we are perfectly aware that our regression results are very questionable. We have so few observations, only twenty-two regions, to claim representative results. That's why we have to nuance our results on regions by comparing them with the departments' results.
+Nevertheless, one could argue that we have obtained promising results on regions.\
+If we look at Table 2.1, we obtained promising results. The simple regressions on productivity and on the capital per farm gave us a p-value under 0.02 by using student's T-test. As a result, we can rule out the possibility H0 : it appears that there is a link between our dependent variable and our independent variables. The multiple regression is less representative, mainly due to the independent variable Productivity. This may be caused by the fact that we have so few observations - with twenty-two observations, we can barely proceed to multiple regressions with success.\
+We will develop further the implications of this analysis in the next part.\
+\
+```{r  regone,error=FALSE, message=FALSE, warning=FALSE, highlight=FALSE, results='asis', cache = TRUE, fig.pos = "t"}
+
+# Explain abandonment regarding "Disp_surface" (Abandoned agricultural area * 100 / Total agricultural area)
+reg_Prod<-lm(D[-1,]$Disp_surface~D[-1,]$Productivite)
+
+reg_Cap <-lm(D[-1,]$Disp_surface~D[-1,]$tractors_per_farm)
+
+reg_mult <- lm(D[-1,]$Disp_surface ~ D[-1,]$tractors_per_farm + D[-1,]$Productivite)
+
+
+stargazer(reg_Prod, reg_Cap, reg_mult,
+          type = "html",
+          title = "Regression results on Regions (2013)",
+          dep.var.labels = c("Disappearing area"),
+          covariate.labels=c("Productivity \\\\(pbs / uta)", "Capital per farm \\\\(tractors per farm)", "Constant"),
+          align = TRUE,
+          digits = 3,
+          report = "vcsp*",
+          no.space =TRUE, 
+          omit.stat = c("ser", "f"),
+          model.numbers=FALSE,
+          header = FALSE,
+          notes = c("Each column embodies a regression with" ,"the relative independent variables"),
+          label = "tab:regone")
+```
+\
+
+## Departments
+
+```{r, echo = FALSE, message=FALSE, error=FALSE, warning=FALSE, include=FALSE, cache = TRUE,fig.pos = "t"}
+
+## New data
+## For regression
+
+Data_2010 <- read_csv("Donnees2010_Regression.csv")
+Data_2010 <- mutate(Data_2010, 
+                                 Productivite = Data_2010$`Production brute standard (millier d'euros)` / Data_2010$`Unités de travail annuel (UTA)`,
+                                 Indice_d_abandon = 100*(Data_2010$`l'exploitation va disparaitre` / Data_2010$`Ensemble des exploitations`),
+                                 Pourcentage_d_exploitants_50plus = 100*(Data_2010$`Exploitations dont le chef, ou le plus âgé des coexploitants a 50 ans  ou plus` / Data_2010$`Ensemble des exploitations`))
+
+# Add square of age index for future regression
+Data_2010$age_square <- Data_2010$Pourcentage_d_exploitants_50plus^2
+
+# Prix moyen des terres et prés libres de plus de 70 ares (euro courant / ha)
+prix_terres_agricoles_2010 <- read_delim("prix_terres_agricoles_2010.csv", ";", escape_double = FALSE, trim_ws = TRUE)
+prix_terres_agricoles_2010$`2010` <- prix_terres_agricoles_2010$`2010` / 1000
+
+Data_2010 <- inner_join(Data_2010, prix_terres_agricoles_2010, by = "Département")
+
+
+map <- st_read("france_dep", "departements-20180101", quiet = TRUE)
+
+map <- map %>% filter(!nom %in% c("La Réunion","Mayotte", "Guadeloupe", "Guyane", "Martinique"))
+
+data_département <- select(Data_2010[-1,],Département, Productivite, Indice_d_abandon, "2010")
+data_département <- mutate(data_département,nom = Département)
+
+map_data <- inner_join(map, data_département)
+
+## We exclude departments which have only few exploitations
+T <- filter(Data_2010, Data_2010$`Ensemble des exploitations` > 60) 
+
+```
+
+We undertook to make a few simple and multiple regressions on departments' data in order to deliver stronger results.
+As we already explained, we constructed a proxy of our key and dependent variable : the percentage of farms which is going to disappear.
+The aim was to allow us to use departments' data in order to regress the outcomes with ninety-two observations. The data are from the *Enquête Succession* (Agreste, 2010). We decided to withdraw a few non-representative departments (mainly certain urban areas).
+
+```{r regtwo, fig.cap="Simple Regressions on Department data (2010)", error=FALSE, message=FALSE, warning=FALSE, highlight=FALSE, results='asis',  fig.show='hold', cache = TRUE, , fig.pos = "b"}
+
+
+reg_2010_prod <- lm(T[-1,]$Indice_d_abandon ~ T[-1,]$Productivite)
+
+reg_2010_price <- lm(T[-1,]$Indice_d_abandon ~ T[-1,]$`2010`)
+
+## in stand by reg_2010_prod_price <- lm(T[-1,]$Indice_d_abandon ~ T[-1,]$Productivite + T[-1,]$`2010`)
+reg_2010_age_agesquare <- lm(T[-1,]$Indice_d_abandon ~ T[-1,]$Pourcentage_d_exploitants_50plus + T[-1,]$age_square)
+
+
+reg_2010_age <- lm(T[-1,]$Indice_d_abandon ~ T[-1,]$Pourcentage_d_exploitants_50plus)
+
+reg_2010_prod_age <- lm(T[-1,]$Indice_d_abandon ~ T[-1,]$Productivite + T[-1,]$Pourcentage_d_exploitants_50plus)
+
+## stand by reg_2010_mult <- lm(T[-1,]$Indice_d_abandon ~  T[-1,]$Pourcentage_d_exploitants_50plus + T[-1,]$Productivite + T[-1,]$`2010`)
+
+reg_2010_mult <- lm(T[-1,]$Indice_d_abandon ~  T[-1,]$Pourcentage_d_exploitants_50plus + T[-1,]$Productivite + T[-1,]$age_square)
+
+stargazer(reg_2010_prod, reg_2010_age,reg_2010_price,
+          type = "html",
+          title = "Simple Regressions on Department data (2010)",
+          dep.var.labels = c("Abandonment Index"),
+          covariate.labels=c("Productivity \\\\(pbs / uta)", "Age index", "Land price index \\\\(thousands euros per hectares)", "Constant"),
+          align = TRUE,
+          digits = 3,
+          report = "vcsp*",
+          no.space =TRUE, 
+          omit.stat = c("ser", "f"),
+          model.numbers=FALSE,
+          header = FALSE,
+          notes = c("Each column embodies a regression with" ,"the relative independent variables"),
+          label = "tab:regtwo")
+```
+
+About the independent variables, we constructed the productivity by using the same process than the one used for regions.
+The Age index reports the percentage of farm holders over fifty years old.
+We also present the Age index square in order to estimate the accumulation effects of the Age on our dependent results. We can draw a parallel with the Mincer’s model where the author compute the accumulation effects of the age on wages.
+This index used the average price in thousands of euros per hectare for landscapes over 70 hectares. It enabled us to undertake a study of specific agricultural landscapes.\
+As we can see in Table 2.2 the student's T-test delivered promising results.
+We could rule out the H0 hypothesis under the p-value 0.02. It appeared that there was a link between each selected independent variable and the agricultural land disappearance.\
+
+```{r regthree, error=FALSE, message=FALSE, warning=FALSE, highlight=FALSE, results='asis', cache = TRUE, fig.pos = "!b"}
+stargazer( reg_2010_prod_age, reg_2010_age_agesquare, reg_2010_mult,
+          type = "html",
+          title = "Multiple Regressions on Department data (2010)",
+          dep.var.labels = c("Abandonment Index"),
+          covariate.labels=c("Productivity \\\\(pbs / uta)", "Age index", "Age index square", "Constant"),
+          align = TRUE,
+          digits = 3,
+          report = "vcsp*",
+          no.space =TRUE, 
+          omit.stat = c("ser", "f"),
+          model.numbers=FALSE,
+          header = FALSE,
+          label = "tab:regthree")
+```
+The double regressions seemed (Table 2.3 ) to be promising too. It allowed us to assume a link between our dependent and independent variables under the p value: 0.02.
+The regression using three independent variables (Productivity, Age index, Age index square) seemed convincing too.\
+We will provide an analysis of these results in the next part.\
+We also assumed that the low values of the R2 and the Adjusted R2 coefficients result from the large discrepancies among the departments. It is blatant when you take a closer look at the figure 2.1.
+We will provide further analysis in the next part.
+Nevertheless, multiple regressions provide us with more significant results.
+The Adjusted R2  we obtained was higher and didn’t suffer of bias linked to degrees of freedom.
+
+```{r  regplot1, fig.cap= "Explaining Land Abandonment by Productivity",fig.show='asis',  fig.align='center', out.width="80%", cache = TRUE}
+#### Regression avec les données de 2010
+# Plot with data's from 2010
+ggplot(T[-1,], aes(x = Productivite, y = Indice_d_abandon)) + 
+  geom_point() + geom_smooth( method = "lm") + 
+  ggtitle("Linear Regression") + 
+  xlab("Productivity") + 
+  ylab("Abandonment Index") + 
+  labs(caption = "Data : Agreste, Enquête Succession (2010)")+
+  theme(legend.title = element_text(size = 15),
+        legend.text = element_text(size = 13),
+        plot.caption = element_text(size= 12),
+        axis.title.y = element_text(size = 13),
+        axis.title.x = element_text(size = 13)) +
+  annotate("text", x = 105, y = 23 , label = "y = -0.059X + 13.484")
+
+```
+
+
+Therefore, our choices of dependent variables seem to be useful for the understanding of farmers' expectations.
+
+
+## Evaluating the Results of our Linear regression
+
+We are perfectly aware that linear regressions can only be pursued under several assumptions. That's why we undertook an analysis of residuals on our principal regression, *Figure 2.2 : Explaining Land abandonment by Productivity*.
+The *Figure 2.3 : Evaluating the results of our linear regression* provides us with an overview of these residuals.\
+The first plot "Residuals Vs Fitted" should show an error distributed randomly around the horizontal line (Residuals = 0).
+There should be no obvious trends. We assumed it was the case, since the errors seemed to be perfectly distributed and the red line nearly followed the line : residuals equals 0.\
+The plot "Normal Q-Q" allowed us to verify the normal distribution of residuals. In our case, residuals seemed to be normally distributed.\
+The plot "Scale-Location" computed the square root of standardized error regarding the fitted values. It shouldn't deliver an obvious trend, wich was the case.\
+The last plot "Residuals Vs Leverage" allowed us to witness the Cook's distances of our observations. With this tool, we can detect the potential outliers in our regression. All points have a Cook's distance under 0.5 -  we concluded that we didn't have any outlier in our math.\
+As a consequence, our regression seems to meet the linear hypothesis.
+
+```{r regplot2, error=FALSE, warning=FALSE, results='asis', fig.show='hold', cache = TRUE, fig.cap= "Evaluating the Results of our Linear regression", fig.pos = "!b", fig.align='center'}
+par(mfrow=c(2,2))
+plot(reg_2010_prod)
+
+```
+
+# Analysis {#analysis}
+
+ 
+
+
+This part is devoted to interpreting the results provided by the regressions.  We will provide an economic analysis for each variable as well as for cross effects.
+
+## Productivity
+
+```{r plot2, fig.align='default', fig.cap=' Productivity comparison by department', fig.show='hold', echo=FALSE, out.width = "60%", cache = TRUE, fig.align='center'}
+
+ggplot(map_data)+ geom_sf(aes(fill= Productivite))+ ggtitle("")+
+  labs( title = "Productivity",
+        caption = "Data : Agreste, Enquête Succession (2010)",
+        fill = "PBS\n /UTA")+
+ theme(axis.text.x = element_blank(),
+                axis.text.y = element_blank(),
+                axis.ticks =   element_blank(),
+                plot.margin = margin(2,2,2,2),
+                plot.title = element_text( size = 16),
+                aspect.ratio = 0.85,
+                legend.margin	= unit(0.1, "cm"),
+                legend.title = element_text(size = 13),
+                legend.text = element_text(size = 13),
+                plot.caption = element_text(size= 14)
+                )
+```
+
+Regressions from Table 2.2 and 2.3 reinforce the assumption made earlier - the higher the productivity, the less likely the farm is to disappear.
+Factually, we obtained a negative coefficient for the productivity variable. Here are two possible economic explanations.\
+\
+```{r plot3, fig.align='default', fig.cap=' Index of abandonment comparison by department', fig.show='hold', echo=FALSE,  out.width = "60%", cache = TRUE, fig.align='center'}
+ggplot(map_data)+ geom_sf(aes(fill= Indice_d_abandon))+ ggtitle("")+
+  labs( title = "Disappearing exploitations",
+        caption = "Data : Agreste, Enquête Succession (2010)",
+        fill = "% of \n left \n farms")+
+  theme(axis.text.x = element_blank(),
+                axis.text.y = element_blank(),
+                axis.ticks =   element_blank(),
+                plot.margin = margin(2,2,2,2),
+                plot.title = element_text( size = 15),
+                aspect.ratio = 0.85,
+                legend.margin	= unit(0.1, "cm"),
+                legend.title = element_text(size = 13),
+                legend.text = element_text(size = 13),
+                plot.caption = element_text(size= 13)
+                )
+```
+A first one is concurrence within Europe. The agricultural market is quite competitive and France implemented the Common Agricultural Policy in 1962. She also became part of the Single Market in 1987. The Four Freedoms has allowed free movements of capital, goods, services and people within the EU. Internal competition evicts less productive farms from the market and undermines the ability of the remaining ones to make profits.\
+A second one is concurrence outside Europe. Over the past few decades, France has multiplied free trade agreements, reinforcing competition within the agricultural market. As a result, the market is concentrating. The less productive farms disappear and the aggregate productivity in agriculture increases. Remaining farms use more capital and standardize production. One can identify a “selection effect” (Marc Melitz, 2003) due to international trade.\
+\
+The reader can take a closer look at Figure 3.1 and 3.2. It shows approximately the same results than region charts - the country seems to be separated into two parts, the north and the south, with significant differences of farm productivity. 
+
+## Capital per farm
+
+Table 2.1 shows a negative correlation between the number of tractors per farm and the disappearing area index. When the number of tractors per farm increases the index of disappearing area decreases.\
+We made the assumption that the higher the capital, the greater the productivity. Therefore, there is a positive correlation between number of tractors and farm productivity. This hypothesis led us to consider that labor and capital are sufficiently substitutable within the farm. Nonetheless, this result is questionable for at least three reasons.\
+\
+First of all, the most productive departments have the highest capital rate. Yet, establishing a causal link between these two variables is complex. Given our data, it is impossible to determine whether it is the capital that makes the farm more productive, or if a higher productivity enables farmers to invest more in capital.\
+Second of all, capital takes time to be profitable, especially in the agriculture industry where machines are very expensive and represent a very high fixed cost. High fixed costs push farmers to contract debts and indebted farmers cannot leave the business. As a consequence they tend to build up negative expectations about their activity.\
+Finally, we did not make a difference on the type of culture. Farming activity is not an homogeneous work. Required machines differ depending on the kind of culture. Thus, the amount of fixed cost to engage is not the same.
+
+## Age index
+
+According to Table 2.2 and Table 2.3, there is a positive statistical association between the age index and the disappearing area index (land abandonment index) for at least two reasons.\
+\
+We computed two regressions - a first one on the Age index only and a second one in which we added the Age index square, as in Mincer’s model. We noticed that when there are more than 57% of old farmers (over fifty years old), the land abandonment index goes up. This result comes from the first order condition - the first derivative by the Age index equals zero.
+We added the Age index square variable to take into account two possible contrary effects on productivity (and therefore on land abandonment) : the experience increases productivity (“learning by doing effect”, Arrow 1962), but as the farmers grow older, their productivity go down due to physical exhaustion. Thus, there exists a break-even point from which the physical exhaustion overtakes the learning by doing effect.\
+The results in Table 2.3 are consistent with our intuition and tend to confirm it.
+Tough times faced by the farming industry are also substantial when it comes to explaining this statistical association. This industry records one of the highest suicide rate and this may account for the farmers’ struggle to find a successor. Young farmers do not need to think about such problems, but their elderly are more likely to, since they are closer to retirement.\
+Finally, the farm sector is not representative of the French population. Men over 50 years old are overrepresented in the agricultural field. This could explain the role played by the Age Index variable in our math. Nevertheless, there are major discrepancies among departments.\
+Thus, the older the farmers get, the worst their expectations on the future of their activity become.
+
+## Price index
+
+According to Table 2.2, there is a positive correlation between the price index and the land abandonment index. When the former goes up, so does the latter. Indeed, the higher the price of a land, the more profitable it is to sell it. The two effects at stake are linked to the two main uses of lands (agriculture and construction).\
+If the land is productive, the farmer is less likely to sell it. Nevertheless, data show that soil productivity and land prices are not always correlated, especially in the South of France (see Figure 3.2) where land productivity is under the national average but prices above it.\
+However, we also observe the opposite effect - agricultural soils with high fertility are disappearing (Antoni V., 2011). We will develop this point further in the next part.\
+Moreover, according to Boutet and Serrano’s paper (2013), the spreading of the urban area push land prices up and incent the farmers to sell their lands. This is one of the papers on which we will dwell on in the Discussion.\
+\
+Acknowledging these facts led us to consider another way to build up land value. 
+
+# Discussion
+
+```{r, include=FALSE, echo=FALSE}
+
+library(tidyverse)
+library(sf)
+
+# Teruti Lucas study for departments
+TLD <- read_csv("Teruti_Lucas_Département.csv")
+
+TLD2006 <- TLD %>% filter( Année == 2006) %>% select(- Année)
+TLD2014 <- TLD %>% filter( Année == 2014) %>% select(- Année)
+
+# calcul pas tres académique du taux de croissance des sols agricoles, naturelles et artificiels par département
+Tc_sols_2014_2006 <-  (TLD2014[,2:4] - TLD2006[,2:4]) / TLD2006[,2:4]
+Tc_sols_2014_2006$Département <-  TLD2014$Département
+
+Tc_sols_2014_2006 <- Tc_sols_2014_2006 %>% 
+  select(Département, `Sols agricoles`, `Sols artificiels`, `Sols naturels`) %>%
+  mutate(Tc_sols_agricoles   = `Sols agricoles`   * 100,
+         Tc_sols_artificiels = `Sols artificiels` * 100,
+         Tc_sols_naturels    = `Sols naturels`    * 100)
+
+Data_2010 <- read_csv("Donnees2010_Regression.csv")
+Data_2010 <- mutate(Data_2010, 
+                    Productivite = Data_2010$`Production brute standard (millier d'euros)` / Data_2010$`Unités de travail annuel (UTA)`,
+                    Indice_d_abandon = 100*(Data_2010$`l'exploitation va disparaitre` / Data_2010$`Ensemble des exploitations`),
+                    Pourcentage_d_exploitants_50plus = 100*(Data_2010$`Exploitations dont le chef, ou le plus âgé des coexploitants a 50 ans  ou plus` / Data_2010$`Ensemble des exploitations`))
+
+# Prix moyen des terres et prés libres de plus de 70 ares (euro courant / ha)
+prix_terres_agricoles_2010 <- read_delim("prix_terres_agricoles_2010.csv", ";", escape_double = FALSE, trim_ws = TRUE)
+
+Data_2010 <- inner_join(Data_2010, prix_terres_agricoles_2010, by = "Département")
+
+
+map <- st_read("france_dep", "departements-20180101", quiet = TRUE)
+
+map <- map %>% filter(!nom %in% c("La Réunion","Mayotte", "Guadeloupe", "Guyane", "Martinique"))
+
+data_département <- select(Data_2010[-1,],Département, Productivite, Indice_d_abandon, "2010")
+data_département <- mutate(data_département,nom = Département)
+
+map_data <- inner_join(map, data_département)
+
+D <- select(Tc_sols_2014_2006, Département, Tc_sols_agricoles, Tc_sols_artificiels, Tc_sols_naturels)
+map_data <- inner_join(map_data, D)
+
+test <- read_csv("5test.csv")
+test <- mutate(test, percent = 100 *  Hectares / rep(54919246, 8))
+test <- filter(test, Sols != "Surface totale")
+
+
+
+```
+
+
+In a quantitative point of view, we obtained several significative results in our regressions. Our aim is now to provide a global explanation for those phenomena. It will allow us to establish a link with the Teruti-Lucas' survey (2015) and other papers in order to explain conversion of agricultural landscapes into “artificialized lands”. This conversion is a source of concern, since it provokes the decrease of food security and is non-reversible (at least for decades).\
+\
+As a consequence, agricultural land disappearance led us to consider competition between urban areas and agricultural lands. We already saw one of the possible effects of this phenomenon : the increase of agricultural land prices. Other determinants could be involved, such as climate change or the evolution of demography. As a matter of fact, global warming may have a huge impact on agricultural productivity, for instance by changing the level of CO2 in the atmosphere (Elsa Martin et Jaune Vaitkeviciute, 2016).Of course, climate change impacts the different cultures in various ways, but the overall effect on french agriculture returns could be negative.\
+Another point of interest may be French demography. According to the INSEE (2014), French population increased by 4.23% between 2006 and 2014. This rise is concentrated in the urban areas and especially in the peri-urban areas, which jeopardizes the agricultural landscapes around cities. This phenomenon is particularly visible around urban areas as Paris, Lyon, Nantes or Toulouse.
+We recognize climate and demography as useful determinants to understand the competition between urban areas and rural lands. There is a wide literature on this subject. Nevertheless, in order to follow the intuitions and the results developed in the previous parts of our paper, we chose to focus our work on land productivity, land value and links between them.\
+\
+We chose to use the data available in the Teruti-Lucas’ survey to study the conversion of agricultural landscapes. This survey has been undertaken each year since 1981, but we focus on the last set released (2006-2014) in order to link it with our previous results on Agreste’s data (from 2010 and 2013). The survey is currently made by using the CAP (Common Agricultural Policy) reports written by farmers when they ask for financial support.\
+
+
+```{r plot4, echo=FALSE, fig.cap= "Lands evolution between 2006 and 2014",fig.show='asis',  fig.align='center', out.width="60%", fig.pos = "!t"}
+library(knitr)
+ggplot(test, aes(x = Sols, y = percent, fill = factor(Année))) +
+  geom_bar(  stat="identity", position = "dodge", width = 0.7) +
+  xlab("") +
+  geom_text(aes(label=round(percent, 1)),
+            position=position_dodge(width=0.7), 
+            vjust=-0.25,
+            size = 4) +
+  scale_fill_brewer(palette="Paired") + 
+  labs( title = "Lands evolution between 2006 and 2014",
+        caption = "Data : Agreste, Teruti-Lucas (2014)",
+        fill = "Years") +
+  theme(plot.title = element_text( size = 14),
+        axis.text.x = element_text(size=11, colour = "black"),
+        axis.text.y = element_text(size=11, colour = "black"),
+        legend.title = element_text(size = 13),
+        legend.text = element_text(size = 13),
+        plot.caption = element_text(size= 12),
+        plot.margin = margin(2,2,2,2),
+                aspect.ratio = 0.75) +
+  scale_x_discrete(labels=c("Sols agricoles" = "Agricultural lands",
+                            "Sols artificiels" = "Artificial lands",
+                            "Sols naturels" = "Natural lands")) +
+  scale_y_continuous(name="Percent of total lands", limits=c(0, 54))
+
+```
+
+
+The Teruti-Lucas' survey concludes by highlighting an increase in artificial lands (+1 %) and a decrease in agricultural lands (-1.1 %) between 2006 and 2014. Natural lands tend to stay stable during this period (+0.1 %). All the shares are expressed in percentage of global french soils (see Figure 4.1). Expressed in terms of growth rate, agricultural landscapes decreased by 2,1 % and artificial lands increased by 12 % in eight years. To give the reader an idea, land conversion represents the equivalent of a department as big as the Bouches-du-Rhône (almost 500.000 hectares) between 2006 and 2014.\
+
+
+```{r plot5, echo=FALSE, fig.cap= "Growth rates of agricultural lands between 2006 and 2014",fig.show='asis',  fig.align='center', out.width="60%", fig.pos = "!b"}
+
+color1 <- c('#2171b5','#4292c6','#6baed6','#c6dbef','#f7f7f7')
+
+ggplot(map_data)+ geom_sf(aes(fill= Tc_sols_agricoles))+ ggtitle("Growth rates of agricultural lands between 2006 and 2014")+
+  labs( subtitle = "",
+        caption = "Data : Agreste, Teruti-Lucas (2014)",
+        fill = "")+
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks =   element_blank(),
+        plot.margin = margin(2,2,2,2),
+        plot.title = element_text( size = 14),
+        aspect.ratio = 0.85,
+        legend.title = element_text(size = 13),
+        legend.text = element_text(size = 13),
+        plot.caption = element_text(size= 12)) + 
+  scale_fill_stepsn(breaks = c(   -20,-10,-5,0),
+  colours = color1)
+```
+
+
+As we can observe on the chart made with Teruti-Lucas’ data (Figure 4.2 and Figure 4.3), the phenomenon of land conversion from agricultural lands to “artificialized land” is relatively homogeneous except for the South-East of the country. We could notice the occurrence of the same departments than in the previous parts : those who composed the Région Rhône-Alpes. Three other departments are involved in a large increase in “articialized lands”, but this is due to a decline in natural lands.\
+
+```{r plot6, echo=FALSE, fig.cap= "Growth rates of artificial lands between 2006 and 2014",fig.show='asis',  fig.align='center', out.width="60%"}
+
+color2 <- c('#f7f7f7','#c6dbef','#9ecae1','#6baed6','#4292c6','#2171b5','#084594')
+
+
+ggplot(map_data)+ geom_sf(aes(fill= Tc_sols_artificiels))+ ggtitle("Growth rates of artificial lands between 2006 and 2014")+
+  labs( subtitle = "",
+        caption = "Data : Agreste, Teruti-Lucas (2014)",
+        fill = "")+
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks =   element_blank(),
+        plot.margin = margin(2,2,2,2),
+        plot.title = element_text( size = 14),
+        aspect.ratio = 0.85,
+        legend.title = element_text(size = 13),
+        legend.text = element_text(size = 13),
+        plot.caption = element_text(size= 12)) + 
+  scale_fill_stepsn(breaks = c(0, 5, 10, 20),
+  colours = color2)
+
+```
+
+We already gave some pieces of understanding for the situation of the south departments : the lower productivity of soils and the role played by land prices for instance. According to the Teruti-Lucas' survey, this last point has a major role to play. As a matter of fact, the land repartition between several functions (agriculture, urban and peri-urban areas, natural lands) is mainly driven by market forces. The price of the land could be used as an indicator of the land productivity and its proximity with an urban or a peri-urban area (Didier Boutet, José Serrano, 2013). According to the journal Economie Rurale, the proximity index with an urban area could be computed and used with the "potential building land rating". As we observed in the Data and Analysis parts of our paper, higher land prices are correlated with a higher rate of land disappearance. Some farmers cannot face high prices and prefer to sell their lands.\
+\
+Didier Boutet and José Serrano's paper shows a feasible approach to reduce this process. It is also based on the Teruti-Lucas' survey and presents a new way to define land value. The idea is to take into account other indicators, as the natural and agronomic perspectives of the land, in the construction of its value. Indicators commonly used are farm productivity and proximity with an urban area, and are mainly based on short-term objectives. The nearer the land is to the city, the more expensive it is. Didier Boutet and José Serrano also present the  evaluation of biodiversity as a possible indicator to define land prices. Moreover, they suggest that land value could also be based on its agronomic potential, thereby considering long-term objectives. Indeed, it seems that this externality is not taken into account in current agricultural land prices.
+Our purpose is to suggest a land value that considers long term and, potentially, to help hindering the land disappearance we observed in the previous part of our paper by internalizing this externality. As a consequence, French farmers may have a better ability to resist agricultural land disappearance.\
+\
+It also allows us to avoid a current paradoxical phenomenon. In France, a large part of the agricultural lands affected by land take has a high agronomic potential, which is measured with the water retention properties of soils. These highly fertile soils account for more than 33 % of the national land take each year (even though it is heterogeneous among regions : between 12 % and 62 %). This phenomenon is noticed by the *Commissariat général au développement durable* (2011)  and reflects the same short-term bias in the construction of land value than previously detailed.\
+\
+Those short-term aims are powerful to explain land disappearance. The agronomic potential (soils fertility) is under-represented in the computation of land value, whereas the productivity and proximity of lands are over-represented. Farmers may suffer from this way of computation, which could explain their tendency for negative expectations.
+
+
+# Conclusion 
+
+We provide a few results of our regression on different variables of interest, such as Productivity, Age and Land values, in order to explain farmers expectations. We particularly highlight some statistical associations, and our main assumption seems to be verified - the greater the productivity in a region, the lower the decrease of agricultural lands appears to be. With our database, it is hard to demonstrate a causal link between our dependent and independent variables. For instance, we cannot conclude if a farm is more productive because there is more capital employed or if a farm has less capital employed because it has low productivity or even if the two effects are at work.\
+\
+Yet, our study provides consistent results in adequation with the scientific literature. Of course, there are many publications on competition between rural and urban lands. We couldn’t undertake a study of all the literature but, to our knowledge, we provide coherent findings with the relevant existing papers such as the Teruti-Lucas’ survey, the OCDE contributions and the Economie Rurale journal.\
+The next step of our work would be to undertake a quantitative analysis among French districts or even municipalities in order to confirm or moderate our results on departments. In fact, we have too few observations to argue highly significant findings and further research has to be conducted.\
+\
+Nevertheless, our thinking supports the possible way to rethink the construction of the land value which was already developed in scientific literature. This could enable economists to consider long term outcomes by using the agronomic potential of the agricultural lands. Starting from there, previous studies argue that it could be beneficial to manage urban sprawl and enhance biodiversity among the countryside. Our contribution suggests that this valuation of lands may also hinder the agricultural land conversion and help farm holders to remain in service. Further research has yet to be conducted to advocate this last assumption, but it may be a powerful argument to protect farmers’ interests.
+
